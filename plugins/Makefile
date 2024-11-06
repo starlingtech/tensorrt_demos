@@ -16,12 +16,14 @@ NVCCFLAGS= $(foreach compute, $(computes),-gencode arch=compute_$(compute),code=
 $(info NVCCFLAGS: $(NVCCFLAGS))
 
 # These are the directories where I installed TensorRT on my x86_64 PC.
-TENSORRT_INCS=-I"/usr/local/TensorRT-7.1.3.4/include"
-TENSORRT_LIBS=-L"/usr/local/TensorRT-7.1.3.4/lib"
+# TENSORRT_INCS=-I"/usr/local/TensorRT-7.1.3.4/include"
+TENSORRT_INCS=-I"/usr/include"
+# TENSORRT_LIBS=-L"/usr/local/TensorRT-7.1.3.4/lib"
+TENSORRT_LIBS=-L"/usr/lib/aarch64-linux-gnu"
 
 # INCS and LIBS
 INCS=-I"/usr/local/cuda/include" $(TENSORRT_INCS) -I"/usr/local/include" -I"plugin"
-LIBS=-L"/usr/local/cuda/lib64" $(TENSORRT_LIBS) -L"/usr/local/lib" -Wl,--start-group -lnvinfer -lnvparsers -lnvinfer_plugin -lcudnn -lcublas -lnvToolsExt -lcudart -lrt -ldl -lpthread -Wl,--end-group
+LIBS=-L"/usr/local/cuda/lib64" $(TENSORRT_LIBS) -L"/usr/local/lib" -Wl,--start-group -lnvinfer -lnvinfer_plugin -lcudnn -lcublas -lnvToolsExt -lcudart -lrt -ldl -lpthread -Wl,--end-group
 
 .PHONY: all clean
 

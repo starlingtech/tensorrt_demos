@@ -182,8 +182,8 @@ class HostDeviceMem(object):
 def get_input_shape(engine):
     """Get input shape of the TensorRT YOLO engine."""
     binding = engine[0]
-    assert engine.binding_is_input(binding)
-    binding_dims = engine.get_binding_shape(binding)
+    # assert engine.binding_is_input(binding)
+    binding_dims = engine.get_tensor_shape(binding)
     if len(binding_dims) == 4:
         return tuple(binding_dims[2:])
     elif len(binding_dims) == 3:
@@ -199,8 +199,10 @@ def allocate_buffers(engine):
     bindings = []
     output_idx = 0
     stream = cuda.Stream()
-    for binding in engine:
-        binding_dims = engine.get_binding_shape(binding)
+    for i, binding in enumerate(engine):
+    # for binding in engine:
+        # binding_dims = engine.get_binding_shape(binding)
+        binding_dims = engine.get_tensor_shape(binding)
         if len(binding_dims) == 4:
             # explicit batch case (TensorRT 7+)
             size = trt.volume(binding_dims)
@@ -209,14 +211,16 @@ def allocate_buffers(engine):
             size = trt.volume(binding_dims) * engine.max_batch_size
         else:
             raise ValueError('bad dims of binding %s: %s' % (binding, str(binding_dims)))
-        dtype = trt.nptype(engine.get_binding_dtype(binding))
+        # dtype = trt.nptype(engine.get_binding_dtype(binding))
+        dtype = trt.nptype(engine.get_tensor_dtype(binding))
         # Allocate host and device buffers
         host_mem = cuda.pagelocked_empty(size, dtype)
         device_mem = cuda.mem_alloc(host_mem.nbytes)
         # Append the device buffer to device bindings.
         bindings.append(int(device_mem))
         # Append to the appropriate list.
-        if engine.binding_is_input(binding):
+        #if engine.binding_is_input(binding):
+        if i == 0:
             inputs.append(HostDeviceMem(host_mem, device_mem))
         else:
             # each grid has 3 anchors, each anchor generates a detection
@@ -239,8 +243,8 @@ def do_inference(context, bindings, inputs, outputs, stream, batch_size=1):
     [cuda.memcpy_htod_async(inp.device, inp.host, stream) for inp in inputs]
     # Run inference.
     context.execute_async(batch_size=batch_size,
-                          bindings=bindings,
-                          stream_handle=stream.handle)
+                             bindings=bindings,
+                             stream_handle=stream.handle)
     # Transfer predictions back from the GPU.
     [cuda.memcpy_dtoh_async(out.host, out.device, stream) for out in outputs]
     # Synchronize the stream
@@ -256,10 +260,17 @@ def do_inference_v2(context, bindings, inputs, outputs, stream):
     dimension networks.
     Inputs and outputs are expected to be lists of HostDeviceMem objects.
     """
+    for i, inp in enumerate(inputs):
+        tensor_name = context.engine.get_tensor_name(i)
+        context.set_tensor_address(tensor_name, int(inp.device))
+
+    for i, out in enumerate(outputs):
+        tensor_name = context.engine.get_tensor_name(len(inputs) + i)
+        context.set_tensor_address(tensor_name, int(out.device))
     # Transfer input data to the GPU.
     [cuda.memcpy_htod_async(inp.device, inp.host, stream) for inp in inputs]
     # Run inference.
-    context.execute_async_v2(bindings=bindings, stream_handle=stream.handle)
+    context.execute_async_v3(stream_handle=stream.handle)
     # Transfer predictions back from the GPU.
     [cuda.memcpy_dtoh_async(out.host, out.device, stream) for out in outputs]
     # Synchronize the stream
@@ -284,8 +295,7 @@ class TrtYOLO(object):
         self.cuda_ctx = cuda_ctx
         if self.cuda_ctx:
             self.cuda_ctx.push()
-
-        self.inference_fn = do_inference if trt.__version__[0] < '7' \
+        self.inference_fn = do_inference if int(trt.__version__.split('.')[0]) < 7 \
                                          else do_inference_v2
         self.trt_logger = trt.Logger(trt.Logger.INFO)
         self.engine = self._load_engine()
